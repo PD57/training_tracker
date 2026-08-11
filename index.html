@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Training Log</title>
+<style>
+  :root{
+    --bg:#12161B; --surface:#1B2127; --alt:#232B33; --border:#2C3640;
+    --text:#E7EBEE; --muted:#8A95A1; --accent:#4FC3B8; --accentDim:#274744;
+    --warn:#E0A458; --alert:#D9665D; --good:#5FAE6E;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font-size:15px; padding-bottom:calc(72px + env(safe-area-inset-bottom));}
+  .wrap{max-width:520px; margin:0 auto; padding:0 14px}
+  header{padding:22px 0 10px; display:flex; justify-content:space-between; align-items:flex-start}
+  h1{font-size:18px; margin:0; letter-spacing:-.01em}
+  .sub{font-size:12px; color:var(--muted); margin-top:2px}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:12px}
+  .p3{padding:12px}
+  .row{display:flex; gap:8px; align-items:center}
+  .col{display:flex; flex-direction:column; gap:8px}
+  .muted{color:var(--muted)} .small{font-size:12px} .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  button{font-family:inherit; font-size:14px; border-radius:10px; border:1px solid var(--border);
+    background:var(--alt); color:var(--text); padding:9px 12px; cursor:pointer}
+  button.primary{background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:600}
+  button.ghost{background:transparent; border-color:transparent; color:var(--muted); padding:6px 4px}
+  button.full{width:100%}
+  button.warnb{background:var(--warn); color:var(--bg); border-color:var(--warn)}
+  input,textarea,select{font-family:inherit; font-size:15px; background:var(--alt); color:var(--text);
+    border:1px solid var(--border); border-radius:10px; padding:9px 10px; width:100%}
+  input[type=number]{text-align:center; -moz-appearance:textfield}
+  input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none; margin:0}
+  textarea{resize:vertical}
+  .chip{padding:6px 11px; border-radius:999px; font-size:12px; background:var(--alt); color:var(--muted); border:1px solid var(--border)}
+  .chip.on{background:var(--accent); color:var(--bg); border-color:var(--accent)}
+  .chips{display:flex; flex-wrap:wrap; gap:6px}
+  .pchip{width:30px; height:32px; padding:0; font-size:13px; border-radius:9px; background:var(--alt); color:var(--muted)}
+  .dot{width:8px; height:8px; border-radius:50%; display:inline-block; flex:none}
+  .exrow{border:1px solid var(--border); border-radius:12px; background:var(--surface); overflow:hidden; margin-bottom:8px}
+  .exrow.open{border-color:var(--accent)}
+  .exhead{padding:11px 12px; display:flex; justify-content:space-between; gap:8px; cursor:pointer}
+  .exbody{padding:0 12px 12px; border-top:1px solid var(--border)}
+  .strike{text-decoration:line-through; color:var(--muted)}
+  .repbox{width:52px}
+  nav{position:fixed; bottom:0; left:0; right:0; background:var(--surface); border-top:1px solid var(--border);
+    padding-bottom:env(safe-area-inset-bottom)}
+  nav .inner{max-width:520px; margin:0 auto; display:flex}
+  nav button{flex:1; border:none; background:none; border-radius:0; color:var(--muted); font-size:11px;
+    padding:9px 0; display:flex; flex-direction:column; align-items:center; gap:3px}
+  nav button.on{color:var(--accent)}
+  nav .ico{font-size:17px; line-height:1}
+  .badge{display:inline-block; background:var(--accent); color:var(--bg); border-radius:999px;
+    font-size:10px; padding:0 5px; margin-left:4px}
+  .banner{border-radius:12px; padding:10px 12px; font-size:12px; border:1px solid var(--border); background:var(--surface)}
+  .sec{margin-top:18px}
+  .h2{font-size:14px; font-weight:600; margin:0 0 8px}
+  svg{display:block; width:100%}
+  .hidden{display:none}
+  label.f{font-size:11px; color:var(--muted); display:block; margin-bottom:4px}
+  .grid3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px}
+  .fieldrow{display:flex; gap:10px; flex-wrap:wrap}
+  .fieldrow > div{flex:0 0 auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Training Log</h1>
+      <div class="sub" id="subline"></div>
+    </div>
+    <button class="ghost" id="btnProgram">Program</button>
+  </header>
+  <main id="view"></main>
+</div>
+<nav><div class="inner">
+  <button data-tab="today" class="on"><span class="ico">▲</span>Today</button>
+  <button data-tab="history"><span class="ico">≡</span>History</button>
+  <button data-tab="export"><span class="ico">↑</span>Export</button>
+</div></nav>
+
+<script>
+/* ============ storage ============ */
+const K = { data:"tt.data.v2", prev:"tt.prev.v2", program:"tt.program.v2", draft:"tt.draft.v2" };
+const SCHEMA = 2;
+let STORAGE_OK = false, STORAGE_NOTE = "";
+const mem = {}; // fallback if localStorage is blocked
+
+function probeStorage(){
+  try{
+    const t = "tt.probe"; localStorage.setItem(t, "1");
+    const ok = localStorage.getItem(t) === "1";
+    localStorage.removeItem(t);
+    STORAGE_OK = ok;
+    STORAGE_NOTE = ok ? "" : "localStorage returned nothing.";
+  }catch(e){ STORAGE_OK = false; STORAGE_NOTE = e.message || "blocked"; }
+}
+function sget(k){ try{ return STORAGE_OK ? localStorage.getItem(k) : (mem[k] ?? null); }catch(e){ return mem[k] ?? null; } }
+function sset(k,v){ try{ if(STORAGE_OK) localStorage.setItem(k,v); else mem[k]=v; }catch(e){ mem[k]=v; STORAGE_OK=false; } }
+function sdel(k){ try{ if(STORAGE_OK) localStorage.removeItem(k); else delete mem[k]; }catch(e){ delete mem[k]; } }
+
+/* ============ defaults ============ */
+const RANGE = { min:8, max:12 };
+const AREAS = [
+  {key:"shoulder", label:"Shoulder / Collarbone", short:"Shoulder"},
+  {key:"knee", label:"Knee", short:"Knee"},
+  {key:"elbowWrist", label:"Elbow / Wrist / Hand", short:"Elbow/Wrist"},
+  {key:"ankle", label:"Ankle", short:"Ankle"}
+];
+const ONSETS = [{key:"during",label:"During session"},{key:"same_day_later",label:"Same day, later"},{key:"next_day",label:"Next day+"}];
+const ZERO = {shoulder:0,knee:0,elbowWrist:0,ankle:0};
+
+const DEFAULT_PROGRAM = {
+  templates: {
+    back:{ label:"Back Day", exercises:[
+      {id:"pullup_assisted",name:"Assisted pull-up",mode:"load",sets:3,reps:12,value:42,unit:"kg assist",step:5,lowerIsHarder:true,joints:["shoulder","elbowWrist"]},
+      {id:"chinup_assisted",name:"Assisted chin-up (supinated)",mode:"load",sets:3,reps:12,value:42,unit:"kg assist",step:5,lowerIsHarder:true,joints:["shoulder","elbowWrist"]},
+      {id:"seated_row_low_cable",name:"Seated row, low cable",mode:"load",sets:3,reps:12,value:30,unit:"kg",step:2.5,joints:["shoulder","elbowWrist"]},
+      {id:"tbar_row",name:"T-bar row (Technogym)",mode:"load",sets:3,reps:12,value:20,unit:"kg",step:2.5,joints:["shoulder","elbowWrist"]},
+      {id:"incline_db_row",name:"Incline dumbbell row",mode:"load",sets:3,reps:12,value:10,unit:"kg/db",step:2,joints:["shoulder","elbowWrist"]},
+      {id:"lower_back_ext",name:"Lower back extension",mode:"load",sets:3,reps:12,value:5,unit:"kg",step:2.5,joints:[]},
+      {id:"incline_bicep_curl",name:"Incline bicep curl",mode:"load",sets:3,reps:12,value:5,unit:"kg",step:2,joints:["elbowWrist"]},
+      {id:"preacher_curl",name:"Preacher curl / cable curl",mode:"load",sets:3,reps:12,value:8,unit:"kg",step:2.5,joints:["elbowWrist"]},
+      {id:"face_pull",name:"Face pull (rope)",mode:"load",sets:3,reps:12,value:4,unit:"kg",step:2.5,joints:["shoulder","elbowWrist"]},
+      {id:"stair_fin_back",name:"Stairmaster (finisher)",mode:"simple",sets:1,value:25,unit:"min",family:"stairmaster"}
+    ]},
+    leg:{ label:"Leg Day", exercises:[
+      {id:"bike_warmup",name:"Stationary bike (warmup)",mode:"simple",sets:1,value:10,unit:"min",family:"cycling"},
+      {id:"leg_press",name:"Leg press",mode:"load",sets:3,reps:12,value:70,unit:"kg",step:5,joints:["knee"]},
+      {id:"one_leg_press",name:"One-leg leg press",mode:"load",sets:3,reps:12,value:15,unit:"kg",step:2.5,joints:["knee"]},
+      {id:"db_rdl",name:"Dumbbell RDL",mode:"load",sets:3,reps:10,value:8,unit:"kg each",step:2,joints:[]},
+      {id:"quad_ext",name:"Quad extension",mode:"load",sets:3,reps:12,value:20,unit:"kg",step:2.5,joints:["knee"]},
+      {id:"ham_curl",name:"Hamstring curl",mode:"load",sets:3,reps:12,value:28,unit:"kg",step:2.5,joints:["knee"]},
+      {id:"calf_raise",name:"Calf raise (kettlebells)",mode:"load",sets:3,reps:12,value:16,unit:"kg x2",step:2,joints:["ankle"]},
+      {id:"hip_abd",name:"Hip abduction",mode:"load",sets:3,reps:12,value:20,unit:"kg",step:5,joints:[]},
+      {id:"hip_add",name:"Hip adduction",mode:"load",sets:3,reps:12,value:30,unit:"kg",step:5,joints:[]},
+      {id:"balance",name:"Single-leg balance",mode:"simple",sets:2,value:30,unit:"sec/side"},
+      {id:"ankle_band",name:"Ankle circles + band inv/ev",mode:"simple",sets:2,value:15,unit:"reps"},
+      {id:"plank",name:"Plank",mode:"simple",sets:3,value:null,unit:"sec"},
+      {id:"dead_bug",name:"Dead bug",mode:"simple",sets:2,value:12,unit:"reps/side"}
+    ]},
+    chest:{ label:"Chest Day", exercises:[
+      {id:"chest_press",name:"Chest press machine",mode:"load",sets:3,reps:12,value:20,unit:"kg",step:2.5,joints:["shoulder","elbowWrist"]},
+      {id:"incline_chest_press",name:"Incline chest press machine",mode:"load",sets:3,reps:12,value:20,unit:"kg",step:2.5,joints:["shoulder"]},
+      {id:"decline_db_press",name:"Decline dumbbell press",mode:"load",sets:3,reps:12,value:10,unit:"kg/db",step:2,joints:["shoulder","elbowWrist"]},
+      {id:"cable_flies",name:"Cable flies",mode:"load",sets:3,reps:12,value:10,unit:"lb/side",step:2.5,joints:["shoulder"]},
+      {id:"tricep_ext_bar",name:"Triceps extension, straight bar",mode:"load",sets:3,reps:12,value:18,unit:"kg",step:2.5,joints:["elbowWrist"]},
+      {id:"tricep_ext_cable",name:"Triceps extension, cable (single)",mode:"load",sets:3,reps:12,value:5,unit:"kg",step:2.5,joints:["elbowWrist"]},
+      {id:"shoulder_press",name:"Shoulder press machine",mode:"load",sets:3,reps:12,value:10,unit:"kg",step:2.5,joints:["shoulder","elbowWrist"]},
+      {id:"straight_arm_raise",name:"Straight-arm shoulder raise",mode:"load",sets:3,reps:12,value:3,unit:"kg/db",step:1,joints:["shoulder"]},
+      {id:"lateral_raise",name:"Straight-arm lateral raise",mode:"load",sets:3,reps:12,value:3,unit:"kg/db",step:1,joints:["shoulder"]},
+      {id:"stair_fin_chest",name:"Stairmaster (finisher)",mode:"simple",sets:1,value:25,unit:"min",family:"stairmaster"}
+    ]}
+  },
+  activities: [
+    {id:"stair_solo",name:"Stairmaster",family:"stairmaster",intensityLabel:"Level",distanceLabel:"Floors",rateLabel:"floors/min",rateMul:1},
+    {id:"cycle_solo",name:"Cycling",family:"cycling",intensityLabel:"Effort 1-10",distanceLabel:"Distance (km)",rateLabel:"km/h",rateMul:60},
+    {id:"swim_solo",name:"Swimming",family:"swimming",intensityLabel:"Effort 1-10",distanceLabel:"Distance (m)",rateLabel:"m/min",rateMul:1}
+  ]
+};
+
+const EMPTY = { schemaVersion:SCHEMA, sessions:[], painLog:[], lastExportedAt:null, lastBackupAt:null, entriesAtBackup:0 };
+
+/* ============ helpers ============ */
+const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const round = n => Math.round(n*100)/100;
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function fmtDate(iso){ const d=new Date(iso+"T00:00:00"); return isNaN(d)?iso:d.toLocaleDateString(undefined,{month:"short",day:"numeric"}); }
+function daysBetween(a,b){ return Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000); }
+function painColor(v){ return v>=7?"var(--alert)":v>=4?"var(--warn)":v>=1?"var(--good)":"var(--muted)"; }
+function areaLabel(k){ const a=AREAS.find(x=>x.key===k); return a?a.label:k; }
+function chrono(list){ return list.slice().sort((a,b)=> a.date!==b.date ? (a.date<b.date?-1:1) : ((a.createdAt||"")<(b.createdAt||"")?-1:1)); }
+function setRepsOf(e){ if(Array.isArray(e.setReps)) return e.setReps.filter(r=>r!=null); if(e.reps!=null&&e.sets!=null) return Array(e.sets).fill(e.reps); if(e.reps!=null) return [e.reps]; return []; }
+function lastSet(e){ const a=setRepsOf(e); return a.length?a[a.length-1]:null; }
+function loadOf(e){ return e.load!=null?e.load:(e.value!=null?e.value:null); }
+function repsSummary(e){ const a=setRepsOf(e); if(!a.length) return null; return a.every(r=>r===a[0]) ? `${a.length}×${a[0]}` : a.join("/"); }
+function isStrength(s){ return s.kind!=="activity"; }
+function rateOf(a){ if(!a||a.distance==null||!a.duration) return null; return round((a.distance/a.duration)*(a.rateMul||1)); }
+function slug(n){ return (n.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"").slice(0,26)||"item")+"_"+Math.random().toString(36).slice(2,5); }
+
+function migrate(raw){
+  const d = Object.assign({}, EMPTY, raw||{});
+  d.sessions = (d.sessions||[]).map(s => Object.assign({kind:s.kind||"strength"}, s, {
+    exercises:(s.exercises||[]).map(e=>Object.assign({},e,{
+      skipped:e.skipped===true,
+      setReps:Array.isArray(e.setReps)?e.setReps:(e.reps!=null&&e.sets!=null?Array(e.sets).fill(e.reps):(e.reps!=null?[e.reps]:[])),
+      load:e.load!=null?e.load:(e.value!=null?e.value:null),
+      rirLast:e.rirLast!=null?e.rirLast:(e.rir!=null?e.rir:null)
+    })),
+    flags:(s.flags||[]).map(f=>({exerciseId:f.exerciseId||null, exercise:f.exercise, note:f.note||""}))
+  }));
+  d.schemaVersion = SCHEMA;
+  return d;
+}
+
+/* ============ state ============ */
+let DB = Object.assign({}, EMPTY);
+let PROGRAM = JSON.parse(JSON.stringify(DEFAULT_PROGRAM));
+let form = null;        // in-progress session
+let tab = "today";
+let ui = { openEx:null, expanded:null, confirmDel:null, confirmFlare:null, trend:null, showFlare:false, showRestore:false, editor:false, openDay:null, openEdit:null, msg:"", exportText:"", backupText:"", importPreview:null, importRaw:"", restoreMsg:"" };
+
+function saveDB(){
+  const prev = sget(K.data);
+  if(prev) sset(K.prev, prev);
+  sset(K.data, JSON.stringify(DB));
+  const back = sget(K.data);
+  try{ const p=JSON.parse(back); return p.sessions.length + (p.painLog||[]).length; }catch(e){ return false; }
+}
+function saveProgram(){ sset(K.program, JSON.stringify(PROGRAM)); }
+function saveDraft(){ if(form) sset(K.draft, JSON.stringify(form)); }
+function clearDraft(){ sdel(K.draft); }
+
+function boot(){
+  probeStorage();
+  const raw = sget(K.data); if(raw){ try{ DB = migrate(JSON.parse(raw)); }catch(e){} }
+  const p = sget(K.program); if(p){ try{ const q=JSON.parse(p); if(q.templates) PROGRAM=q; }catch(e){} }
+  const d = sget(K.draft); if(d){ try{ ui.draft = JSON.parse(d); }catch(e){} }
+}
+
+/* ============ progression engine ============ */
+function flareIndex(){
+  const idx={}, ord=chrono(DB.sessions);
+  (DB.painLog||[]).forEach(f=>{
+    let t=f.relatedSessionId||null;
+    if(!t){ for(let i=ord.length-1;i>=0;i--){ const g=daysBetween(ord[i].date,f.date); if(g>=0&&g<=2){ t=ord[i].id; break; } } }
+    if(t){ (idx[t]=idx[t]||[]).push(f); }
+  });
+  return idx;
+}
+function lastN(exId,n){
+  const out=[], ord=chrono(DB.sessions);
+  for(let i=ord.length-1;i>=0&&out.length<n;i--){
+    const s=ord[i]; if(!isStrength(s)) continue;
+    const e=(s.exercises||[]).find(x=>x.id===exId && !x.skipped);
+    if(e) out.push({ex:e, session:s});
+  }
+  return out;
+}
+function planFor(def){
+  const fb={ target:{sets:def.sets||3, reps:def.reps||RANGE.max, load:def.value}, rec:null };
+  if(def.mode!=="load") return fb;
+  const hist=lastN(def.id,2);
+  if(!hist.length) return Object.assign({},fb,{rec:{label:"No history — set a baseline", color:"var(--muted)"}});
+  const {ex,session}=hist[0];
+  const load=loadOf(ex), reps=lastSet(ex), sets=setRepsOf(ex).length||def.sets||3, rir=ex.rirLast;
+  const step=def.step||2.5, dir=def.lowerIsHarder?-1:1, unit=(def.unit||"").includes("lb")?"lb":"kg";
+  const joints=def.joints||[], fi=flareIndex()[session.id]||[];
+  const flagged=(session.flags||[]).some(f=>f.exerciseId===def.id);
+  const inS=joints.reduce((m,j)=>Math.max(m,(session.pain&&session.pain[j])||0),0);
+  const del=joints.reduce((m,j)=>Math.max(m, fi.filter(f=>f.area===j).reduce((mm,f)=>Math.max(mm,f.severity||0),0)),0);
+  if(flagged || Math.max(inS,del)>=4){
+    const dOnly = !flagged && inS<4 && del>=4;
+    return { target:{sets, reps:reps??RANGE.min, load}, rec:{label: dOnly?"Hold — pain showed up later":"Hold — pain flagged", color:"var(--alert)"} };
+  }
+  if(load==null||reps==null) return fb;
+  if(reps>=RANGE.max){
+    const ready = rir!=null ? rir>=2 : (hist.length>1 && lastSet(hist[1].ex)>=RANGE.max);
+    if(ready) return { target:{sets, reps:RANGE.min, load:round(load+dir*step)},
+      rec:{label:`${dir<0?"−":"+"}${step}${unit}${def.lowerIsHarder?" assist":""} → ${RANGE.min} reps`, color:"var(--good)"} };
+    return { target:{sets, reps:RANGE.max, load}, rec:{label: rir!=null?"Hold — last set was too hard":"Hold — repeat to confirm", color:"var(--muted)"} };
+  }
+  if(rir!=null && rir<=0) return { target:{sets,reps,load}, rec:{label:"Hold — last set was too hard", color:"var(--muted)"} };
+  if(reps<RANGE.min) return { target:{sets,reps:RANGE.min,load}, rec:{label:"Rebuild to 8 reps", color:"var(--warn)"} };
+  const nr=Math.min(reps+1,RANGE.max);
+  return { target:{sets,reps:nr,load}, rec:{label:`+1 rep → ${nr}`, color:"var(--accent)"} };
+}
+
+/* ============ start / save ============ */
+function startDay(key){
+  const t=PROGRAM.templates[key];
+  form={ kind:"strength", dayType:key, date:todayISO(), painOn:false, pain:Object.assign({},ZERO), notes:"",
+    exercises: t.exercises.map(def=>{
+      const p=planFor(def), prev=lastN(def.id,1)[0];
+      return { id:def.id, name:def.name, unit:def.unit, mode:def.mode, family:def.family||def.id,
+        target:p.target, rec:p.rec,
+        prev: prev ? [repsSummary(prev.ex), loadOf(prev.ex)!=null?`${loadOf(prev.ex)} ${def.unit||""}`:null].filter(Boolean).join(" @ ") : null,
+        setReps:Array(p.target.sets||1).fill(null), load:p.target.load, rirLast:null,
+        done:false, skipped:false, flagged:false, flagNote:"" };
+    })};
+  ui.openEx=null; ui.msg=""; saveDraft(); render();
+}
+function startActivity(id){
+  const a=PROGRAM.activities.find(x=>x.id===id); if(!a) return;
+  form={ kind:"activity", activityId:a.id, name:a.name, family:a.family,
+    intensityLabel:a.intensityLabel, distanceLabel:a.distanceLabel, rateLabel:a.rateLabel, rateMul:a.rateMul||1,
+    date:todayISO(), duration:null, intensity:null, distance:null,
+    painOn:false, pain:Object.assign({},ZERO), notes:"" };
+  ui.msg=""; saveDraft(); render();
+}
+function rowState(r){
+  if(r.skipped) return "skipped";
+  if(r.mode==="load") return r.setReps.some(x=>x!=null) ? "logged" : "untouched";
+  return r.done ? "logged" : "untouched";
+}
+function saveSession(){
+  if(!form) return;
+  let entry;
+  if(form.kind==="activity"){
+    entry={ id:uid(), kind:"activity", createdAt:new Date().toISOString(), date:form.date,
+      activityId:form.activityId, name:form.name, family:form.family,
+      intensityLabel:form.intensityLabel, distanceLabel:form.distanceLabel, rateLabel:form.rateLabel, rateMul:form.rateMul,
+      duration:form.duration, intensity:form.intensity, distance:form.distance,
+      pain: form.painOn?form.pain:Object.assign({},ZERO), notes:form.notes, exercises:[], flags:[] };
+  } else {
+    const exs=form.exercises.map(r=>{ const st=rowState(r); return {
+      id:r.id, name:r.name, unit:r.unit, family:r.family, mode:r.mode,
+      skipped: st!=="logged",
+      setReps: st==="logged"&&r.mode==="load" ? r.setReps.filter(x=>x!=null) : [],
+      load: st==="logged" ? r.load : null,
+      rirLast: st==="logged" ? r.rirLast : null }; });
+    entry={ id:uid(), kind:"strength", createdAt:new Date().toISOString(), date:form.date, dayType:form.dayType,
+      exercises:exs, pain: form.painOn?form.pain:Object.assign({},ZERO),
+      flags: form.exercises.filter(r=>r.flagged).map(r=>({exerciseId:r.id, exercise:r.name, note:r.flagNote||""})),
+      notes:form.notes };
+  }
+  DB.sessions.push(entry);
+  const n=saveDB();
+  ui.msg = n===false ? "NOT SAVED — storage failed. Copy a backup now."
+    : `Saved. ${n} entries in storage.` + (STORAGE_OK?"":" (memory only — will not survive closing)");
+  form=null; clearDraft(); render();
+}
+
+/* ============ export / backup ============ */
+function pending(){
+  const s=DB.sessions.filter(x=>!DB.lastExportedAt||x.createdAt>DB.lastExportedAt);
+  const f=(DB.painLog||[]).filter(x=>!DB.lastExportedAt||x.createdAt>DB.lastExportedAt);
+  return {s,f,n:s.length+f.length};
+}
+function buildExport(){
+  const {s,f,n}=pending();
+  if(!n){ ui.exportText="Nothing new since the last export."; return; }
+  const blocks=chrono(s).map(x=>{
+    const pl=AREAS.map(a=>`${a.label} ${(x.pain&&x.pain[a.key])||0}`).join(" | ");
+    if(!isStrength(x)){
+      const bits=[ x.duration!=null?`${x.duration} min`:null,
+        x.intensity!=null?`${x.intensityLabel||"intensity"} ${x.intensity}`:null,
+        x.distance!=null?`${x.distance} ${(x.distanceLabel||"").toLowerCase()}`:null,
+        rateOf(x)!=null?`${rateOf(x)} ${x.rateLabel}`:null ].filter(Boolean);
+      return `### ${x.date} — ${x.name} (standalone)\n- ${bits.join(", ")||"done"}\n**Pain (session):** ${pl}${x.notes?`\n**Notes:** ${x.notes}`:""}`;
+    }
+    const done=(x.exercises||[]).filter(e=>!e.skipped), skip=(x.exercises||[]).filter(e=>e.skipped);
+    const lines=done.map(e=>{
+      const p=[]; const rs=repsSummary(e); if(rs)p.push(rs);
+      if(loadOf(e)!=null)p.push(`${loadOf(e)} ${e.unit||""}`.trim());
+      return `- ${e.name}: ${p.join(" @ ")||"done"}${e.rirLast!=null?` (RIR ${e.rirLast} last set)`:""}`;
+    }).join("\n");
+    const sk=skip.length?`\n**Not performed:** ${skip.map(e=>e.name).join(", ")}`:"";
+    const fl=(x.flags&&x.flags.length)?`\n**Flagged:** ${x.flags.map(y=>y.exercise+(y.note?` (${y.note})`:"")).join(", ")}`:"";
+    const lab=PROGRAM.templates[x.dayType]?PROGRAM.templates[x.dayType].label:x.dayType;
+    return `### ${x.date} — ${lab}\n${lines||"- (nothing logged)"}${sk}\n**Pain (session):** ${pl}${fl}${x.notes?`\n**Notes:** ${x.notes}`:""}`;
+  });
+  if(f.length){
+    blocks.push("### Delayed pain flares\n"+f.slice().sort((a,b)=>a.date<b.date?-1:1).map(x=>{
+      const o=(ONSETS.find(y=>y.key===x.onset)||{}).label||x.onset;
+      return `- ${x.date} — ${areaLabel(x.area)} ${x.severity}/10 [${o}]${x.note?`: ${x.note}`:""}`;
+    }).join("\n"));
+  }
+  ui.exportText=blocks.join("\n\n");
+}
+function buildBackup(){
+  ui.backupText = JSON.stringify({ format:"training-tracker-backup", schemaVersion:SCHEMA,
+    exportedAt:new Date().toISOString(), data:DB, program:PROGRAM });
+}
+async function copyText(t, done){
+  try{ await navigator.clipboard.writeText(t); done("Copied"); }
+  catch(e){ done("Copy blocked — select the text and copy manually"); }
+}
+function parseImport(txt){
+  ui.restoreMsg="";
+  if(!txt.trim()){ ui.importPreview=null; return; }
+  try{
+    const b=JSON.parse(txt), d=b.data||b;
+    if(!Array.isArray(d.sessions)) throw 0;
+    ui.importPreview={ sessions:d.sessions.length, flares:(d.painLog||[]).length,
+      when:b.exportedAt?b.exportedAt.slice(0,10):null, program:b.program||null, data:d };
+  }catch(e){ ui.importPreview=null; ui.restoreMsg="Not a valid backup. Paste the whole block."; }
+}
+
+/* ============ tiny chart ============ */
+function lineChart(points, unit){
+  if(points.length<2) return `<div class="small muted">Need at least two entries for a trend.</div>`;
+  const W=320,H=140,P=26;
+  const vals=points.map(p=>p.value), mn=Math.min(...vals), mx=Math.max(...vals);
+  const span=(mx-mn)||1;
+  const xy=points.map((p,i)=>[P+(i*(W-P-8))/(points.length-1), H-P-((p.value-mn)/span)*(H-P-14)]);
+  const path=xy.map((c,i)=>(i?"L":"M")+c[0].toFixed(1)+" "+c[1].toFixed(1)).join(" ");
+  const dots=xy.map(c=>`<circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="3" fill="var(--accent)"/>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:150px">
+    <line x1="${P}" y1="${H-P}" x2="${W-4}" y2="${H-P}" stroke="var(--border)"/>
+    <line x1="${P}" y1="10" x2="${P}" y2="${H-P}" stroke="var(--border)"/>
+    <text x="2" y="16" fill="var(--muted)" font-size="10">${mx}</text>
+    <text x="2" y="${H-P}" fill="var(--muted)" font-size="10">${mn}</text>
+    <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}
+    <text x="${P}" y="${H-8}" fill="var(--muted)" font-size="10">${esc(fmtDate(points[0].date))}</text>
+    <text x="${W-70}" y="${H-8}" fill="var(--muted)" font-size="10">${esc(fmtDate(points[points.length-1].date))}</text>
+  </svg><div class="small muted">${esc(unit||"")} · all contexts combined</div>`;
+}
+function familyPoints(fam){
+  const out=[];
+  DB.sessions.forEach(s=>{
+    if(isStrength(s)){
+      (s.exercises||[]).forEach(e=>{ if(e.skipped) return; const v=loadOf(e); if(v==null) return;
+        if((e.family||e.id)===fam) out.push({date:s.date, value:v, unit:e.unit}); });
+    } else if((s.family||s.activityId)===fam && s.duration!=null){
+      const r=rateOf(s); out.push({date:s.date, value:r!=null?r:s.duration, unit:r!=null?s.rateLabel:"min"});
+    }
+  });
+  return out.sort((a,b)=>a.date<b.date?-1:1);
+}
+
+/* ============ render ============ */
+const V = () => document.getElementById("view");
+
+function render(){
+  document.getElementById("subline").textContent =
+    `${DB.sessions.length} entr${DB.sessions.length===1?"y":"ies"} logged`;
+  document.getElementById("btnProgram").style.display = (tab==="today"&&!form&&!ui.editor)?"":"none";
+  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on", b.dataset.tab===tab));
+  if(ui.editor){ V().innerHTML=editorView(); return; }
+  V().innerHTML = tab==="today" ? todayView() : tab==="history" ? historyView() : exportView();
+}
+
+function storageBanner(){
+  const total=DB.sessions.length+(DB.painLog||[]).length;
+  if(STORAGE_OK) return `<div class="banner"><span style="color:var(--good)">Storage OK · ${total} entries</span>
+    <span class="muted"> — saved on this device.</span></div>`;
+  return `<div class="banner" style="border-color:var(--alert); color:var(--alert)">
+    <b>Storage unavailable</b> — nothing will survive closing this page. Copy a backup before you leave.
+    ${STORAGE_NOTE?`<div class="small muted" style="margin-top:4px">${esc(STORAGE_NOTE)}</div>`:""}</div>`;
+}
+
+function painBlock(o){
+  return `<div class="card p3 col">
+    <div class="row" style="justify-content:space-between">
+      <b style="font-size:14px">Any pain today?</b>
+      <button class="chip ${o.painOn?"on":""}" data-act="painToggle">${o.painOn?"Yes":"No"}</button>
+    </div>
+    ${o.painOn?AREAS.map(a=>`<div><label class="f">${a.label}</label><div class="chips">
+      ${Array.from({length:11},(_,n)=>`<button class="pchip" data-act="pain" data-area="${a.key}" data-v="${n}"
+        style="${o.pain[a.key]===n?`background:${painColor(n)};color:var(--bg);border-color:${painColor(n)}`:""}">${n}</button>`).join("")}
+      </div></div>`).join(""):""}
+    ${o.painOn?`<div class="small muted">Pain that appears hours later or the next day goes in History → Log a flare.</div>`:""}
+  </div>`;
+}
+
+function todayView(){
+  if(!form){
+    const p=pending(), total=DB.sessions.length+(DB.painLog||[]).length;
+    const due=(total-(DB.entriesAtBackup||0))>=10;
+    return `${storageBanner()}
+      ${ui.msg?`<div class="banner" style="margin-top:10px;border-color:var(--accent);color:var(--accent)">${esc(ui.msg)}</div>`:""}
+      ${ui.draft?`<div class="banner sec" style="border-color:var(--warn)">
+        <div>Unfinished session from ${esc(fmtDate(ui.draft.date))}.</div>
+        <div class="row" style="margin-top:8px"><button class="primary" style="flex:1" data-act="resume">Resume</button>
+        <button style="flex:1" data-act="discardDraft">Discard</button></div></div>`:""}
+      ${due?`<div class="banner sec" style="border-color:var(--warn); color:var(--warn)">
+        ${total-(DB.entriesAtBackup||0)} entries since your last backup.</div>`:""}
+      <div class="sec"><div class="h2 muted">Lifting session</div>
+        ${Object.entries(PROGRAM.templates).map(([k,t])=>
+          `<button class="full card p3" style="text-align:left;margin-bottom:8px;background:var(--surface)" data-act="startDay" data-k="${k}">
+            <b>${esc(t.label)}</b></button>`).join("")}
+      </div>
+      <div class="sec"><div class="h2 muted">Standalone activity</div>
+        <div class="grid3">${PROGRAM.activities.map(a=>
+          `<button class="card p3" style="background:var(--surface)" data-act="startAct" data-k="${a.id}">${esc(a.name)}</button>`).join("")}</div>
+      </div>`;
+  }
+  if(form.kind==="activity"){
+    const r=rateOf(form);
+    return `<div class="row" style="justify-content:space-between"><b>${esc(form.name)}</b>
+        <button class="ghost" data-act="cancel">Discard</button></div>
+      <div style="margin:10px 0"><input type="date" value="${form.date}" data-f="date"></div>
+      <div class="card p3 col">
+        <div class="fieldrow">
+          <div><label class="f">Duration (min)</label><input type="number" inputmode="decimal" class="repbox" style="width:70px" value="${form.duration??""}" data-f="duration"></div>
+          <div><label class="f">${esc(form.intensityLabel||"Intensity")}</label><input type="number" inputmode="decimal" style="width:62px" value="${form.intensity??""}" data-f="intensity"></div>
+          <div><label class="f">${esc(form.distanceLabel||"Distance")}</label><input type="number" inputmode="decimal" style="width:80px" value="${form.distance??""}" data-f="distance"></div>
+        </div>
+        ${r!=null?`<div class="small mono" style="color:var(--accent)">${r} ${esc(form.rateLabel||"")}</div>`:""}
+      </div>
+      <div style="margin-top:10px">${painBlock(form)}</div>
+      <div style="margin-top:10px"><textarea rows="2" placeholder="Notes" data-f="notes">${esc(form.notes)}</textarea></div>
+      <button class="primary full" style="margin-top:10px" data-act="save">Save ${esc(form.name.toLowerCase())}</button>
+      <div style="height:20px"></div>`;
+  }
+  const t=PROGRAM.templates[form.dayType];
+  const c={logged:0,skipped:0,untouched:0}; form.exercises.forEach(r=>c[rowState(r)]++);
+  return `<div class="row" style="justify-content:space-between"><b>${esc(t?t.label:form.dayType)}</b>
+      <button class="ghost" data-act="cancel">Discard</button></div>
+    <div style="margin:10px 0"><input type="date" value="${form.date}" data-f="date"></div>
+    <div class="small muted" style="margin-bottom:8px">${c.logged} logged · ${c.skipped} skipped · ${c.untouched} not started</div>
+    ${form.exercises.map((r,i)=>exRow(r,i)).join("")}
+    <div style="margin-top:10px">${painBlock(form)}</div>
+    <div style="margin-top:10px"><textarea rows="2" placeholder="Notes" data-f="notes">${esc(form.notes)}</textarea></div>
+    <button class="primary full" style="margin-top:10px" data-act="save">Save session</button>
+    <div class="small muted" style="margin-top:8px">Anything left blank is recorded as not performed.</div>
+    <div style="height:20px"></div>`;
+}
+
+function exRow(r,i){
+  const st=rowState(r), open=ui.openEx===r.id;
+  const col= st==="logged"?"var(--good)": st==="skipped"?"var(--muted)":"var(--border)";
+  const tgt = r.mode==="load"
+    ? `${r.target.sets}×${r.target.reps}${r.target.load!=null?` @ ${r.target.load} ${r.unit||""}`:""}`
+    : (r.target.load!=null?`${r.target.load} ${r.unit||""}`:"as prescribed");
+  return `<div class="exrow ${open?"open":""}">
+    <div class="exhead" data-act="toggleEx" data-i="${i}">
+      <div style="min-width:0">
+        <div class="row" style="gap:6px"><span class="dot" style="background:${col}"></span>
+          <span class="${st==="skipped"?"strike":""}" style="font-size:14px">${esc(r.name)}</span>
+          ${r.flagged?`<span style="color:var(--alert)">⚑</span>`:""}</div>
+        <div class="small mono muted" style="margin-top:2px">Target ${esc(tgt)}</div>
+        ${r.rec?`<div class="small" style="color:${r.rec.color};margin-top:2px">${esc(r.rec.label)}</div>`:""}
+      </div><span class="muted">${open?"▴":"▾"}</span>
+    </div>
+    ${open?`<div class="exbody">
+      <div class="row" style="margin:10px 0">
+        <button style="flex:1;background:var(--accentDim);color:var(--accent);border-color:var(--accentDim)" data-act="hit" data-i="${i}">Hit target</button>
+        <button data-act="skip" data-i="${i}" style="${r.skipped?"background:var(--muted);color:var(--bg)":""}">${r.skipped?"Skipped":"Skip"}</button>
+      </div>
+      ${r.prev?`<div class="small mono muted" style="margin-bottom:8px">Last time: ${esc(r.prev)}</div>`:""}
+      ${r.mode==="load"?`
+        <label class="f">Reps per set</label>
+        <div class="row" style="flex-wrap:wrap;margin-bottom:10px">
+          ${r.setReps.map((v,si)=>`<input type="number" inputmode="numeric" class="repbox" placeholder="${r.target.reps}" value="${v??""}" data-f="rep" data-i="${i}" data-s="${si}">`).join("")}
+          <button data-act="addSet" data-i="${i}">+</button>
+        </div>
+        <div class="fieldrow" style="margin-bottom:10px">
+          <div><label class="f">Load (${esc(r.unit||"")})</label><input type="number" inputmode="decimal" style="width:84px" value="${r.load??""}" data-f="load" data-i="${i}"></div>
+          <div><label class="f">RIR, last set</label><input type="number" inputmode="numeric" style="width:62px" value="${r.rirLast??""}" data-f="rir" data-i="${i}"></div>
+        </div>`
+      :`<div class="fieldrow" style="align-items:flex-end;margin-bottom:10px">
+          <div><label class="f">${esc(r.unit||"value")}</label><input type="number" inputmode="decimal" style="width:84px" value="${r.load??""}" data-f="load" data-i="${i}"></div>
+          <button data-act="done" data-i="${i}" style="${r.done?"background:var(--good);color:var(--bg)":""}">${r.done?"Done":"Mark done"}</button>
+        </div>`}
+      <button data-act="flag" data-i="${i}" class="small" style="${r.flagged?"background:var(--alert);color:var(--bg);border-color:var(--alert)":""}">⚑ ${r.flagged?"Hurt during this":"This hurt"}</button>
+      ${r.flagged?`<input placeholder="What did it feel like?" value="${esc(r.flagNote)}" data-f="flagNote" data-i="${i}" style="margin-top:8px">`:""}
+    </div>`:""}
+  </div>`;
+}
+
+function historyView(){
+  const list=chrono(DB.sessions).reverse();
+  const fp = ui.trend ? familyPoints(ui.trend) : null;
+  return `<button class="full" style="border-color:var(--warn);color:var(--warn)" data-act="toggleFlare">+ Log a flare</button>
+  ${ui.showFlare?`<div class="card p3 col" style="margin-top:10px">
+    <input type="date" value="${ui.flareDate||todayISO()}" data-f="flareDate">
+    <div class="chips">${AREAS.map(a=>`<button class="chip ${(ui.flareArea||"elbowWrist")===a.key?"on":""}" data-act="flareArea" data-k="${a.key}">${a.short}</button>`).join("")}</div>
+    <div><label class="f">Severity</label><div class="chips">
+      ${Array.from({length:11},(_,n)=>`<button class="pchip" data-act="flareSev" data-v="${n}"
+        style="${(ui.flareSev??3)===n?`background:${painColor(n)};color:var(--bg);border-color:${painColor(n)}`:""}">${n}</button>`).join("")}</div></div>
+    <div class="chips">${ONSETS.map(o=>`<button class="chip ${(ui.flareOnset||"next_day")===o.key?"on":""}" data-act="flareOnset" data-k="${o.key}">${o.label}</button>`).join("")}</div>
+    <input placeholder="Note" value="${esc(ui.flareNote||"")}" data-f="flareNote">
+    <button class="warnb" data-act="saveFlare">Save flare</button>
+    <div class="small muted">Links automatically to the most recent session within 2 days.</div>
+  </div>`:""}
+  ${(DB.painLog||[]).length?`<div class="sec"><div class="h2">Flares</div>
+    ${(DB.painLog||[]).slice().sort((a,b)=>a.date<b.date?1:-1).map(f=>`
+      <div class="card p3 row small" style="justify-content:space-between;margin-bottom:6px">
+        <span><span class="muted">${fmtDate(f.date)}</span>
+          <span style="color:${painColor(f.severity)}">${areaLabel(f.area)} ${f.severity}</span>
+          ${f.note?`<span class="muted">· ${esc(f.note)}</span>`:""}</span>
+        <button class="ghost" data-act="${ui.confirmFlare===f.id?"delFlare":"askFlare"}" data-k="${f.id}"
+          style="${ui.confirmFlare===f.id?"color:var(--alert)":""}">${ui.confirmFlare===f.id?"Confirm":"✕"}</button>
+      </div>`).join("")}</div>`:""}
+  ${fp?`<div class="card p3 sec"><div class="row" style="justify-content:space-between">
+      <b class="small">${esc(fp.length?ui.trend:"")}</b><button class="ghost" data-act="closeTrend">✕</button></div>
+      ${lineChart(fp, fp.length?fp[fp.length-1].unit:"")}</div>`:""}
+  <div class="sec"><div class="h2">Sessions</div>
+    ${!list.length?`<div class="small muted">Nothing logged yet.</div>`:""}
+    ${list.map(s=>{
+      const open=ui.expanded===s.id;
+      const mx=Math.max(0,...Object.values(s.pain||ZERO));
+      const lab=isStrength(s)?(PROGRAM.templates[s.dayType]?PROGRAM.templates[s.dayType].label:s.dayType):`${s.name} (standalone)`;
+      return `<div class="card" style="margin-bottom:8px">
+        <div class="exhead" data-act="expand" data-k="${s.id}">
+          <div><div style="font-size:14px">${fmtDate(s.date)} — ${esc(lab)}</div>
+          ${mx>0?`<div class="small" style="color:${painColor(mx)}">Peak pain ${mx}/10</div>`:""}</div>
+          <span class="muted">${open?"▴":"▾"}</span></div>
+        ${open?`<div class="exbody" style="padding-top:10px">
+          ${isStrength(s)?(s.exercises||[]).map(e=>{
+            const sum=e.skipped?"not performed":[repsSummary(e), loadOf(e)!=null?`${loadOf(e)} ${e.unit||""}`.trim():null, e.rirLast!=null?`RIR ${e.rirLast}`:null].filter(Boolean).join(" @ ");
+            return `<div class="row small mono" style="justify-content:space-between;cursor:pointer" data-act="trend" data-k="${e.family||e.id}">
+              <span class="muted">${esc(e.name)}</span><span style="${e.skipped?"color:var(--border)":""}">${esc(sum)}</span></div>`;
+          }).join("") : `<div class="row small mono" style="justify-content:space-between;cursor:pointer" data-act="trend" data-k="${s.family||s.activityId}">
+            <span class="muted">${esc(s.name)}</span><span>${[s.duration!=null?`${s.duration} min`:null, s.intensity!=null?`${s.intensityLabel||"int"} ${s.intensity}`:null, s.distance!=null?`${s.distance} ${(s.distanceLabel||"").toLowerCase()}`:null, rateOf(s)!=null?`${rateOf(s)} ${s.rateLabel}`:null].filter(Boolean).join(" · ")}</span></div>`}
+          <div class="row small" style="flex-wrap:wrap;gap:10px;margin-top:8px">
+            ${AREAS.map(a=>{const v=(s.pain&&s.pain[a.key])||0; return `<span style="color:${painColor(v)}">${a.short} ${v}</span>`}).join("")}</div>
+          ${s.flags&&s.flags.length?`<div class="small" style="color:var(--warn);margin-top:6px">Flagged: ${esc(s.flags.map(f=>f.exercise).join(", "))}</div>`:""}
+          ${s.notes?`<div class="small muted" style="margin-top:6px">${esc(s.notes)}</div>`:""}
+          <button class="ghost small" style="margin-top:6px;${ui.confirmDel===s.id?"color:var(--alert)":""}"
+            data-act="${ui.confirmDel===s.id?"del":"askDel"}" data-k="${s.id}">${ui.confirmDel===s.id?"Confirm delete":"Delete"}</button>
+        </div>`:""}
+      </div>`;
+    }).join("")}
+  </div><div style="height:20px"></div>`;
+}
+
+function exportView(){
+  const p=pending();
+  return `${storageBanner()}
+  <div class="sec"><div class="h2">For the chat</div>
+    <div class="small muted" style="margin-bottom:8px">${p.n?`${p.n} entr${p.n>1?"ies":"y"} not yet copied into your reference files.`:"Everything is up to date."}</div>
+    <button class="full" data-act="buildExport">Build export</button>
+    ${ui.exportText?`<textarea rows="10" readonly style="margin-top:8px" class="mono">${esc(ui.exportText)}</textarea>
+      <div class="row" style="margin-top:8px"><button class="primary" style="flex:1" data-act="copyExport">Copy</button>
+      <button style="flex:1" data-act="markSynced">Mark synced</button></div>`:""}
+  </div>
+  <div class="sec"><div class="h2">Full backup</div>
+    <div class="small muted" style="margin-bottom:8px">${DB.lastBackupAt?`Last backed up ${fmtDate(DB.lastBackupAt.slice(0,10))}.`:"Never backed up."}</div>
+    <button class="full" data-act="buildBackup">Build backup</button>
+    ${ui.backupText?`<textarea rows="5" readonly style="margin-top:8px" class="mono">${esc(ui.backupText)}</textarea>
+      <button class="primary full" style="margin-top:8px" data-act="copyBackup">Copy backup</button>`:""}
+    <button class="ghost small" style="margin-top:6px" data-act="toggleRestore">${ui.showRestore?"Hide restore":"Restore from a backup"}</button>
+    ${ui.showRestore?`<div class="card p3 col">
+      <textarea rows="4" placeholder="Paste a backup here" class="mono" data-f="importRaw">${esc(ui.importRaw)}</textarea>
+      ${ui.importPreview?`<div class="small muted">${ui.importPreview.sessions} sessions, ${ui.importPreview.flares} flares${ui.importPreview.when?` · from ${fmtDate(ui.importPreview.when)}`:""}${ui.importPreview.program?" · includes a program":""}</div>
+        <div class="small" style="color:var(--warn)">Restoring replaces what's here now.</div>
+        <button data-act="impLog">Restore logged data only</button>
+        ${ui.importPreview.program?`<button data-act="impProg">Restore program only</button>
+        <button class="warnb" data-act="impBoth">Restore both</button>`:""}`:""}
+      <button data-act="undo">Undo last save</button>
+      ${ui.restoreMsg?`<div class="small" style="color:var(--accent)">${esc(ui.restoreMsg)}</div>`:""}
+    </div>`:""}
+  </div><div style="height:20px"></div>`;
+}
+
+function editorView(){
+  return `<div class="row" style="justify-content:space-between"><b>Program</b>
+    <button class="ghost" data-act="closeEditor">Done</button></div>
+  <div class="small muted" style="margin:8px 0">Changes apply to future sessions. Past sessions stay as logged.</div>
+  ${Object.entries(PROGRAM.templates).map(([k,t])=>`
+    <div class="card" style="margin-bottom:8px">
+      <div class="exhead" data-act="openDay" data-k="${k}"><b class="small">${esc(t.label)}</b>
+        <span class="small muted">${t.exercises.length} exercises</span></div>
+      ${ui.openDay===k?`<div class="exbody" style="padding-top:10px">
+        ${t.exercises.map((e,i)=>`
+          <div class="card p3" style="background:var(--alt);margin-bottom:6px">
+            <div class="row" style="justify-content:space-between">
+              <span class="small" data-act="openEdit" data-k="${e.id}" style="flex:1">${esc(e.name)}</span>
+              <button class="ghost" data-act="mvUp" data-d="${k}" data-i="${i}">↑</button>
+              <button class="ghost" data-act="mvDn" data-d="${k}" data-i="${i}">↓</button>
+              <button class="ghost" style="color:var(--alert)" data-act="rmEx" data-d="${k}" data-i="${i}">✕</button>
+            </div>
+            ${ui.openEdit===e.id?`<div class="col" style="margin-top:8px">
+              <input value="${esc(e.name)}" data-f="exName" data-d="${k}" data-i="${i}">
+              <div class="fieldrow">
+                <div><label class="f">Sets</label><input type="number" style="width:56px" value="${e.sets??""}" data-f="exSets" data-d="${k}" data-i="${i}"></div>
+                <div><label class="f">Unit</label><input style="width:88px" value="${esc(e.unit||"")}" data-f="exUnit" data-d="${k}" data-i="${i}"></div>
+                <div><label class="f">Step</label><input type="number" style="width:60px" value="${e.step??""}" data-f="exStep" data-d="${k}" data-i="${i}"></div>
+                <div><label class="f">Start</label><input type="number" style="width:68px" value="${e.value??""}" data-f="exVal" data-d="${k}" data-i="${i}"></div>
+              </div>
+              <div class="chips">${["load","simple"].map(m=>`<button class="chip ${e.mode===m?"on":""}" data-act="exMode" data-d="${k}" data-i="${i}" data-k2="${m}">${m==="load"?"Weighted":"Simple"}</button>`).join("")}</div>
+              ${e.mode==="load"?`<div class="chips">${AREAS.map(a=>`<button class="chip ${(e.joints||[]).includes(a.key)?"on":""}" data-act="exJoint" data-d="${k}" data-i="${i}" data-k2="${a.key}">${a.short}</button>`).join("")}</div>
+                <button class="chip ${e.lowerIsHarder?"on":""}" data-act="exAssist" data-d="${k}" data-i="${i}">Lower = harder (assisted)</button>`:""}
+              <div><label class="f">Trend group</label><input value="${esc(e.family||"")}" data-f="exFam" data-d="${k}" data-i="${i}"></div>
+            </div>`:""}
+          </div>`).join("")}
+        <button class="full" data-act="addEx" data-d="${k}">+ Add exercise</button>
+      </div>`:""}
+    </div>`).join("")}
+  <div class="card p3 col sec"><b class="small">Standalone activities</b>
+    ${PROGRAM.activities.map((a,i)=>`<div class="col" style="gap:4px">
+      <div class="row"><input value="${esc(a.name)}" data-f="acName" data-i="${i}">
+        <button class="ghost" style="color:var(--alert)" data-act="rmAct" data-i="${i}">✕</button></div>
+      <div class="row"><input placeholder="trend group" value="${esc(a.family||"")}" data-f="acFam" data-i="${i}">
+        <input placeholder="distance label" value="${esc(a.distanceLabel||"")}" data-f="acDist" data-i="${i}">
+        <input placeholder="rate label" value="${esc(a.rateLabel||"")}" data-f="acRate" data-i="${i}"></div>
+    </div>`).join("")}
+    <button data-act="addAct">+ Add activity</button>
+  </div>
+  <button class="primary full sec" data-act="saveProgram">Save program</button>
+  <div style="height:24px"></div>`;
+}
+
+/* ============ events ============ */
+document.addEventListener("click", e=>{
+  const nav=e.target.closest("nav button");
+  if(nav){ tab=nav.dataset.tab; render(); return; }
+  if(e.target.id==="btnProgram"){ ui.editor=true; render(); return; }
+  const el=e.target.closest("[data-act]"); if(!el) return;
+  const a=el.dataset.act, i=+el.dataset.i, k=el.dataset.k, k2=el.dataset.k2, d=el.dataset.d;
+
+  const acts={
+    startDay:()=>startDay(k), startAct:()=>startActivity(k),
+    cancel:()=>{ form=null; clearDraft(); render(); },
+    resume:()=>{ form=ui.draft; ui.draft=null; render(); },
+    discardDraft:()=>{ ui.draft=null; clearDraft(); render(); },
+    toggleEx:()=>{ ui.openEx = ui.openEx===form.exercises[i].id ? null : form.exercises[i].id; render(); },
+    hit:()=>{ const r=form.exercises[i];
+      if(r.mode==="load"){ r.setReps=Array(r.target.sets||1).fill(r.target.reps); r.load=r.target.load; }
+      else { r.load=r.target.load; }
+      r.done=true; r.skipped=false; saveDraft(); render(); },
+    skip:()=>{ const r=form.exercises[i]; r.skipped=!r.skipped; r.done=false;
+      if(r.skipped) r.setReps=r.setReps.map(()=>null); saveDraft(); render(); },
+    addSet:()=>{ form.exercises[i].setReps.push(null); saveDraft(); render(); },
+    done:()=>{ const r=form.exercises[i]; r.done=!r.done; r.skipped=false; saveDraft(); render(); },
+    flag:()=>{ const r=form.exercises[i]; r.flagged=!r.flagged; saveDraft(); render(); },
+    painToggle:()=>{ form.painOn=!form.painOn; saveDraft(); render(); },
+    pain:()=>{ form.pain[el.dataset.area]=+el.dataset.v; saveDraft(); render(); },
+    save:()=>saveSession(),
+    expand:()=>{ ui.expanded = ui.expanded===k?null:k; ui.confirmDel=null; render(); },
+    askDel:()=>{ ui.confirmDel=k; render(); },
+    del:()=>{ DB.sessions=DB.sessions.filter(s=>s.id!==k); saveDB(); ui.confirmDel=null; render(); },
+    askFlare:()=>{ ui.confirmFlare=k; render(); },
+    delFlare:()=>{ DB.painLog=DB.painLog.filter(f=>f.id!==k); saveDB(); ui.confirmFlare=null; render(); },
+    toggleFlare:()=>{ ui.showFlare=!ui.showFlare; render(); },
+    flareArea:()=>{ ui.flareArea=k; render(); },
+    flareSev:()=>{ ui.flareSev=+el.dataset.v; render(); },
+    flareOnset:()=>{ ui.flareOnset=k; render(); },
+    saveFlare:()=>{ DB.painLog.push({ id:uid(), createdAt:new Date().toISOString(),
+        date:ui.flareDate||todayISO(), area:ui.flareArea||"elbowWrist", severity:ui.flareSev??3,
+        onset:ui.flareOnset||"next_day", note:ui.flareNote||"", relatedSessionId:null });
+      saveDB(); ui.showFlare=false; ui.flareNote=""; render(); },
+    trend:()=>{ ui.trend=k; render(); window.scrollTo({top:0,behavior:"smooth"}); },
+    closeTrend:()=>{ ui.trend=null; render(); },
+    buildExport:()=>{ buildExport(); render(); },
+    copyExport:()=>copyText(ui.exportText, m=>{ ui.restoreMsg=m; render(); }),
+    markSynced:()=>{ DB.lastExportedAt=new Date().toISOString(); saveDB(); ui.exportText=""; render(); },
+    buildBackup:()=>{ buildBackup(); render(); },
+    copyBackup:()=>copyText(ui.backupText, m=>{ DB.lastBackupAt=new Date().toISOString();
+      DB.entriesAtBackup=DB.sessions.length+(DB.painLog||[]).length; saveDB(); ui.restoreMsg=m; render(); }),
+    toggleRestore:()=>{ ui.showRestore=!ui.showRestore; render(); },
+    impLog:()=>{ DB=migrate(ui.importPreview.data); saveDB(); ui.importRaw=""; ui.importPreview=null; ui.restoreMsg="Restored."; render(); },
+    impProg:()=>{ PROGRAM=ui.importPreview.program; saveProgram(); ui.restoreMsg="Program restored."; render(); },
+    impBoth:()=>{ DB=migrate(ui.importPreview.data); PROGRAM=ui.importPreview.program; saveDB(); saveProgram();
+      ui.importRaw=""; ui.importPreview=null; ui.restoreMsg="Restored."; render(); },
+    undo:()=>{ const p=sget(K.prev); if(!p){ ui.restoreMsg="No previous version."; } else { DB=migrate(JSON.parse(p)); sset(K.data,JSON.stringify(DB)); ui.restoreMsg="Reverted to the version before the last save."; } render(); },
+    closeEditor:()=>{ ui.editor=false; render(); },
+    openDay:()=>{ ui.openDay=ui.openDay===k?null:k; render(); },
+    openEdit:()=>{ ui.openEdit=ui.openEdit===k?null:k; render(); },
+    mvUp:()=>{ const arr=PROGRAM.templates[d].exercises; if(i>0){ [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; render(); } },
+    mvDn:()=>{ const arr=PROGRAM.templates[d].exercises; if(i<arr.length-1){ [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; render(); } },
+    rmEx:()=>{ PROGRAM.templates[d].exercises.splice(i,1); render(); },
+    addEx:()=>{ PROGRAM.templates[d].exercises.push({id:slug("new"),name:"New exercise",mode:"load",sets:3,reps:12,value:10,unit:"kg",step:2.5,joints:[]}); render(); },
+    exMode:()=>{ PROGRAM.templates[d].exercises[i].mode=k2; render(); },
+    exAssist:()=>{ const x=PROGRAM.templates[d].exercises[i]; x.lowerIsHarder=!x.lowerIsHarder; render(); },
+    exJoint:()=>{ const x=PROGRAM.templates[d].exercises[i]; x.joints=x.joints||[];
+      x.joints = x.joints.includes(k2) ? x.joints.filter(j=>j!==k2) : x.joints.concat(k2); render(); },
+    rmAct:()=>{ PROGRAM.activities.splice(i,1); render(); },
+    addAct:()=>{ PROGRAM.activities.push({id:slug("act"),name:"New activity",family:slug("fam"),intensityLabel:"Intensity",distanceLabel:"Distance",rateLabel:"",rateMul:1}); render(); },
+    saveProgram:()=>{ saveProgram(); ui.editor=false; render(); }
+  };
+  if(acts[a]) acts[a]();
+});
+
+// Inputs update state without re-rendering, so focus and the keyboard stay put.
+document.addEventListener("input", e=>{
+  const f=e.target.dataset.f; if(!f) return;
+  const v=e.target.value, num = v===""?null:Number(v);
+  const i=+e.target.dataset.i, s=+e.target.dataset.s, d=e.target.dataset.d;
+  const T = d!==undefined ? (PROGRAM.templates[d]||{}).exercises : null;
+  const map={
+    date:()=>form.date=v, notes:()=>form.notes=v,
+    duration:()=>form.duration=num, intensity:()=>form.intensity=num, distance:()=>form.distance=num,
+    rep:()=>{ form.exercises[i].setReps[s]=num; form.exercises[i].skipped=false; },
+    load:()=>form.exercises[i].load=num, rir:()=>form.exercises[i].rirLast=num,
+    flagNote:()=>form.exercises[i].flagNote=v,
+    flareDate:()=>ui.flareDate=v, flareNote:()=>ui.flareNote=v,
+    importRaw:()=>{ ui.importRaw=v; parseImport(v); },
+    exName:()=>T[i].name=v, exUnit:()=>T[i].unit=v, exFam:()=>T[i].family=v,
+    exSets:()=>T[i].sets=num, exStep:()=>T[i].step=num, exVal:()=>T[i].value=num,
+    acName:()=>PROGRAM.activities[i].name=v, acFam:()=>PROGRAM.activities[i].family=v,
+    acDist:()=>PROGRAM.activities[i].distanceLabel=v, acRate:()=>PROGRAM.activities[i].rateLabel=v
+  };
+  if(map[f]) map[f]();
+  if(form) saveDraft();
+  // live rate readout on the activity screen
+  if(form && form.kind==="activity" && ["duration","distance"].includes(f)){
+    const r=rateOf(form), n=document.querySelector(".card .mono");
+    if(n && r!=null) n.textContent = `${r} ${form.rateLabel||""}`;
+  }
+});
+
+boot(); render();
+</script>
+</body>
+</html>
