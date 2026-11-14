@@ -17,7 +17,11 @@
   body{margin:0; background:var(--bg); color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:15px;}
   /* The app scrolls inside this fixed box, so iOS can't shift the whole page under the status bar. */
-  #scroller{position:fixed; top:0; left:0; right:0; bottom:calc(-1 * var(--shim, 0px)); overflow-y:auto; -webkit-overflow-scrolling:touch;
+  /* App shell. Normally fixed to the viewport; when iOS reports a short viewport it becomes an absolute
+     box sized to the real screen height, because iOS clips fixed elements at the (wrong) viewport edge. */
+  #app{position:fixed; top:0; left:0; right:0; bottom:0}
+  html.shim #app{position:absolute; bottom:auto; height:var(--appH)}
+  #scroller{position:absolute; top:0; left:0; right:0; bottom:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
     overscroll-behavior-y:contain; padding-bottom:calc(76px + env(safe-area-inset-bottom))}
   .wrap{max-width:520px; margin:0 auto; padding:0 14px}
   header{padding:calc(14px + env(safe-area-inset-top)) 0 10px; display:flex; justify-content:space-between; align-items:flex-start}
@@ -57,7 +61,7 @@
   .setbox button{padding:0 6px; font-size:11px; border:none; background:none; color:var(--muted)}
   /* iOS 26 Home Screen apps can report a viewport shorter than the screen; --shim extends fixed elements over the gap. */
   html.shim, html.shim body{overflow:visible}
-  nav{position:fixed; bottom:calc(-1 * var(--shim, 0px)); left:0; right:0; background:var(--surface); border-top:1px solid var(--border);
+  nav{position:absolute; bottom:0; left:0; right:0; background:var(--surface); border-top:1px solid var(--border);
     padding-bottom:env(safe-area-inset-bottom)}
   nav .inner{max-width:520px; margin:0 auto; display:flex}
   nav button{flex:1; border:none; background:none; border-radius:0; color:var(--muted); font-size:11px;
@@ -80,7 +84,7 @@
 </head>
 <body>
 <div id="safeProbe"></div>
-<div id="scroller"><div class="wrap">
+<div id="app"><div id="scroller"><div class="wrap">
   <header>
     <div>
       <h1>Training Log</h1>
@@ -94,7 +98,7 @@
   <button data-tab="today" class="on"><span class="ico">▲</span>Today</button>
   <button data-tab="history"><span class="ico">≡</span>History</button>
   <button data-tab="export"><span class="ico">↑</span>Export</button>
-</div></nav>
+</div></nav></div>
 
 <script>
 /* ================= storage ================= */
@@ -1045,6 +1049,7 @@ function fixViewport(){
   const gap = Math.round(full - window.innerHeight);
   const shim = gap>0 && gap<=120 ? gap : 0;
   document.documentElement.style.setProperty("--shim", shim+"px");
+  document.documentElement.style.setProperty("--appH", (window.innerHeight+shim)+"px");
   document.documentElement.classList.toggle("shim", shim>0);
   if(window.scrollY!==0) window.scrollTo(0,0);
 }
