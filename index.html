@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Training Log</title>
 <style>
   :root{
@@ -17,7 +17,7 @@
   body{margin:0; background:var(--bg); color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:15px;}
   /* The app scrolls inside this fixed box, so iOS can't shift the whole page under the status bar. */
-  #scroller{position:fixed; top:0; left:0; right:0; bottom:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  #scroller{position:fixed; top:0; left:0; right:0; bottom:calc(-1 * var(--shim, 0px)); overflow-y:auto; -webkit-overflow-scrolling:touch;
     overscroll-behavior-y:contain; padding-bottom:calc(76px + env(safe-area-inset-bottom))}
   .wrap{max-width:520px; margin:0 auto; padding:0 14px}
   header{padding:calc(14px + env(safe-area-inset-top)) 0 10px; display:flex; justify-content:space-between; align-items:flex-start}
@@ -55,7 +55,9 @@
   .setbox{display:flex; flex-direction:column; align-items:center; gap:2px}
   .setbox input{width:54px; padding:9px 4px}
   .setbox button{padding:0 6px; font-size:11px; border:none; background:none; color:var(--muted)}
-  nav{position:fixed; bottom:0; left:0; right:0; background:var(--surface); border-top:1px solid var(--border);
+  /* iOS 26 Home Screen apps can report a viewport shorter than the screen; --shim extends fixed elements over the gap. */
+  html.shim, html.shim body{overflow:visible}
+  nav{position:fixed; bottom:calc(-1 * var(--shim, 0px)); left:0; right:0; background:var(--surface); border-top:1px solid var(--border);
     padding-bottom:env(safe-area-inset-bottom)}
   nav .inner{max-width:520px; margin:0 auto; display:flex}
   nav button{flex:1; border:none; background:none; border-radius:0; color:var(--muted); font-size:11px;
@@ -73,9 +75,11 @@
   .bar{height:8px; border-radius:4px; background:var(--alt); overflow:hidden; flex:1}
   .bar > span{display:block; height:100%}
   .sheet{border:1px solid var(--accent)}
+  #safeProbe{position:fixed; visibility:hidden; pointer-events:none; padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom)}
 </style>
 </head>
 <body>
+<div id="safeProbe"></div>
 <div id="scroller"><div class="wrap">
   <header>
     <div>
@@ -839,7 +843,9 @@ function exportView(){
       <button data-act="undo">Undo last save</button>
     </div>`:""}
     ${ui.restoreMsg?`<div class="small" style="color:var(--accent);margin-top:6px">${esc(ui.restoreMsg)}</div>`:""}
-  </div><div style="height:20px"></div>`;
+  </div>
+  <div class="sec small muted mono" style="word-break:break-all">Display check: ${esc(Object.entries(viewportDiag()).map(([k,v])=>k+"="+v).join(" · "))}</div>
+  <div style="height:20px"></div>`;
 }
 
 function editorView(){
@@ -1021,7 +1027,33 @@ document.addEventListener("change", e=>{
   }
 });
 
-boot(); render();
+/* ================= iOS 26 Home Screen viewport workaround ================= */
+// Known WebKit issue: in standalone mode innerHeight can come up short of screen.height and the
+// page gets shifted. Measure the shortfall, extend fixed elements over it, and pin page scroll to 0.
+function isStandalone(){ return window.navigator.standalone===true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches); }
+function viewportDiag(){
+  const pr=document.getElementById("safeProbe"), cs=pr?getComputedStyle(pr):null, vv=window.visualViewport;
+  return { standalone:isStandalone(), portrait:window.matchMedia?matchMedia("(orientation: portrait)").matches:null,
+    screenH:screen.height, innerH:window.innerHeight, vvH:vv?Math.round(vv.height):null, vvTop:vv?Math.round(vv.offsetTop):null,
+    scrollY:Math.round(window.scrollY), safeTop:cs?cs.paddingTop:null, safeBottom:cs?cs.paddingBottom:null,
+    shim:getComputedStyle(document.documentElement).getPropertyValue("--shim").trim()||"0px" };
+}
+function fixViewport(){
+  if(!isStandalone()) return;
+  const portrait = window.matchMedia && matchMedia("(orientation: portrait)").matches;
+  const full = portrait ? Math.max(screen.height, screen.width) : Math.min(screen.height, screen.width);
+  const gap = Math.round(full - window.innerHeight);
+  const shim = gap>0 && gap<=120 ? gap : 0;
+  document.documentElement.style.setProperty("--shim", shim+"px");
+  document.documentElement.classList.toggle("shim", shim>0);
+  if(window.scrollY!==0) window.scrollTo(0,0);
+}
+["resize","orientationchange","focus","pageshow"].forEach(ev=>window.addEventListener(ev, ()=>setTimeout(fixViewport,60)));
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) setTimeout(fixViewport,60); });
+window.addEventListener("scroll", ()=>{ if(isStandalone() && window.scrollY!==0) window.scrollTo(0,0); }, {passive:true});
+if(window.visualViewport) window.visualViewport.addEventListener("resize", ()=>setTimeout(fixViewport,60));
+
+boot(); render(); fixViewport(); setTimeout(fixViewport,300);
 </script>
 </body>
 </html>
