@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <title>Training Log</title>
 <style>
   :root{
@@ -13,9 +13,12 @@
     --warn:#E0A458; --alert:#D9665D; --good:#5FAE6E;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%; overflow:hidden; overscroll-behavior:none}
   body{margin:0; background:var(--bg); color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    font-size:15px; padding-bottom:calc(72px + env(safe-area-inset-bottom));}
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:15px;}
+  /* The app scrolls inside this fixed box, so iOS can't shift the whole page under the status bar. */
+  #scroller{position:fixed; top:0; left:0; right:0; bottom:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    overscroll-behavior-y:contain; padding-bottom:calc(76px + env(safe-area-inset-bottom))}
   .wrap{max-width:520px; margin:0 auto; padding:0 14px}
   header{padding:calc(14px + env(safe-area-inset-top)) 0 10px; display:flex; justify-content:space-between; align-items:flex-start}
   h1{font-size:18px; margin:0; letter-spacing:-.01em}
@@ -73,7 +76,7 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+<div id="scroller"><div class="wrap">
   <header>
     <div>
       <h1>Training Log</h1>
@@ -82,7 +85,7 @@
     <button class="ghost" id="btnProgram">Program</button>
   </header>
   <main id="view"></main>
-</div>
+</div></div>
 <nav><div class="inner">
   <button data-tab="today" class="on"><span class="ico">▲</span>Today</button>
   <button data-tab="history"><span class="ico">≡</span>History</button>
@@ -457,7 +460,7 @@ function saveSession(force){
     finishSave(); return;
   }
   const incomplete=form.exercises.filter(r=>["partial","untouched"].includes(rowState(r)));
-  if(!force && incomplete.length){ ui.confirmSave=incomplete.map(r=>`${r.name}${rowState(r)==="partial"?` (${filled(r)} of ${r.setReps.length} sets)`:" (not started)"}`); render(); window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"}); return; }
+  if(!force && incomplete.length){ ui.confirmSave=incomplete.map(r=>`${r.name}${rowState(r)==="partial"?` (${filled(r)} of ${r.setReps.length} sets)`:" (not started)"}`); render(); SC().scrollTo({top:SC().scrollHeight,behavior:"smooth"}); return; }
   ui.confirmSave=null;
   let pfRun=[];
   const exs=form.exercises.map(r=>{
@@ -483,7 +486,7 @@ function saveSession(force){
 function finishSave(){
   const n=saveDB();
   ui.msg = n===false ? "NOT SAVED — storage failed. Download a backup now." : `Saved. ${n} entries in storage.`+(STORAGE_OK?"":" (memory only — will not survive closing)");
-  form=null; clearDraft(); render(); window.scrollTo({top:0});
+  form=null; clearDraft(); render(); SC().scrollTo({top:0});
 }
 function acceptDefault(){
   const o=ui.defaultOffer; if(!o) return;
@@ -599,6 +602,7 @@ function lineChart(points){
 
 /* ================= render ================= */
 const V=()=>document.getElementById("view");
+const SC=()=>document.getElementById("scroller");
 function render(){
   document.getElementById("subline").textContent=`${DB.sessions.length} entr${DB.sessions.length===1?"y":"ies"} logged`;
   document.getElementById("btnProgram").style.display=(tab==="today"&&!form&&!ui.editor)?"":"none";
@@ -894,7 +898,7 @@ function editorView(){
 /* ================= events ================= */
 function listOf(d,w){ const t=PROGRAM.templates[d]; return w==="pool" ? (t.pool=t.pool||[]) : t.exercises; }
 document.addEventListener("click", async e=>{
-  const nav=e.target.closest("nav button"); if(nav){ tab=nav.dataset.tab; ui.editor=false; render(); window.scrollTo({top:0}); return; }
+  const nav=e.target.closest("nav button"); if(nav){ tab=nav.dataset.tab; ui.editor=false; render(); SC().scrollTo({top:0}); return; }
   if(e.target.id==="btnProgram"){ ui.editor=true; render(); return; }
   const el=e.target.closest("[data-act]"); if(!el) return;
   const a=el.dataset.act, i=+el.dataset.i, s=+el.dataset.s, k=el.dataset.k, d=el.dataset.d, w=el.dataset.w;
@@ -941,7 +945,7 @@ document.addEventListener("click", async e=>{
     saveFlare:()=>{ DB.painLog.push({ id:uid(), createdAt:new Date().toISOString(), date:ui.flareDate||todayISO(), area:ui.flareArea||"knee",
         side:ui.flareSide||null, severity:ui.flareSev??3, onset:ui.flareOnset||"next_day", note:ui.flareNote||"", relatedSessionId:null });
       saveDB(); ui.showFlare=false; ui.flareNote=""; render(); },
-    trend:()=>{ ui.trend=k; ui.trendName=el.dataset.n; render(); window.scrollTo({top:0,behavior:"smooth"}); },
+    trend:()=>{ ui.trend=k; ui.trendName=el.dataset.n; render(); SC().scrollTo({top:0,behavior:"smooth"}); },
     closeTrend:()=>{ ui.trend=null; render(); },
     showExport:()=>{ ui.exportText=buildExport(false); render(); },
     copyExport:async()=>{ ui.restoreMsg=await copyText(ui.exportText); render(); },
