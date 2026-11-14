@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1B2127">
 <title>Training Log</title>
 <style>
   :root{
@@ -14,13 +15,14 @@
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
   html,body{height:100%; overflow:hidden; overscroll-behavior:none}
+  /* iOS 26 can leave a band under the page that the app can't draw into; html's colour matches the nav so it blends in. */
+  html{background:#1B2127}
   body{margin:0; background:var(--bg); color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:15px;}
   /* The app scrolls inside this fixed box, so iOS can't shift the whole page under the status bar. */
   /* App shell. Normally fixed to the viewport; when iOS reports a short viewport it becomes an absolute
      box sized to the real screen height, because iOS clips fixed elements at the (wrong) viewport edge. */
   #app{position:fixed; top:0; left:0; right:0; bottom:0}
-  html.shim #app{position:absolute; bottom:auto; height:var(--appH)}
   #scroller{position:absolute; top:0; left:0; right:0; bottom:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
     overscroll-behavior-y:contain; padding-bottom:calc(76px + env(safe-area-inset-bottom))}
   .wrap{max-width:520px; margin:0 auto; padding:0 14px}
@@ -59,8 +61,6 @@
   .setbox{display:flex; flex-direction:column; align-items:center; gap:2px}
   .setbox input{width:54px; padding:9px 4px}
   .setbox button{padding:0 6px; font-size:11px; border:none; background:none; color:var(--muted)}
-  /* iOS 26 Home Screen apps can report a viewport shorter than the screen; --shim extends fixed elements over the gap. */
-  html.shim, html.shim body{overflow:visible}
   nav{position:absolute; bottom:0; left:0; right:0; background:var(--surface); border-top:1px solid var(--border);
     padding-bottom:env(safe-area-inset-bottom)}
   nav .inner{max-width:520px; margin:0 auto; display:flex}
@@ -104,7 +104,7 @@
 /* ================= storage ================= */
 // Keys unchanged from v2 so existing data carries over. The program is migrated in place.
 const K = { data:"tt.data.v2", prev:"tt.prev.v2", program:"tt.program.v2", draft:"tt.draft.v3" };
-const SCHEMA = 3, PROGRAM_VERSION = 3;
+const SCHEMA = 3, PROGRAM_VERSION = 4;
 let STORAGE_OK = false, STORAGE_NOTE = "";
 const mem = {};
 function probeStorage(){
@@ -188,6 +188,15 @@ const DEFAULT_PROGRAM = {
     {id:"swim_solo",name:"Swimming",family:"swimming",intensityLabel:"Effort 1-10",distanceLabel:"Distance (m)",rateLabel:"m/min",rateMul:1}
   ]
 };
+// Cardio and core, available on any day.
+const SHARED_DEFAULTS = [
+  {id:"stair_any",name:"Stairmaster",mode:"simple",sets:1,value:25,unit:"min",family:"stairmaster",muscles:[]},
+  {id:"bike_any",name:"Stationary bike",mode:"simple",sets:1,value:20,unit:"min",family:"cycling",muscles:[]},
+  {id:"plank",name:"Plank",mode:"simple",sets:3,value:null,unit:"sec",muscles:["core"]},
+  {id:"side_plank",name:"Side plank",mode:"simple",sets:2,value:30,unit:"sec/side",muscles:["core"]},
+  {id:"dead_bug",name:"Dead bug",mode:"simple",sets:2,value:12,unit:"reps/side",muscles:["core"]},
+  {id:"decline_situps",name:"Decline sit-ups",mode:"load",sets:3,reps:12,value:0,unit:"kg",step:2.5,joints:[],muscles:["core"]}
+];
 const BSS_DEF = {id:"bss",name:"Bulgarian split squat",mode:"load",sets:3,reps:12,value:0,unit:"kg each",step:2,joints:["knee"],muscles:["quads","glutes"]};
 const EMPTY = { schemaVersion:SCHEMA, sessions:[], painLog:[], lastExportedAt:null, lastBackupAt:null, entriesAtBackup:0 };
 
@@ -287,7 +296,8 @@ function fillDef(e){
 }
 function migrateProgram(p){
   p = clone(p);
-  if((p.version||0) >= PROGRAM_VERSION){ Object.values(p.templates).forEach(t=>{ t.exercises.forEach(fillDef); (t.pool=t.pool||[]).forEach(fillDef); }); return p; }
+  if((p.version||0) >= PROGRAM_VERSION){ Object.values(p.templates).forEach(t=>{ t.exercises.forEach(fillDef); (t.pool=t.pool||[]).forEach(fillDef); }); (p.shared=p.shared||[]).forEach(fillDef); return p; }
+  if((p.version||0) >= 3) return migrateToShared(p);
   Object.entries(p.templates).forEach(([key,t])=>{
     t.pool = t.pool || [];
     t.exercises.forEach(fillDef); t.pool.forEach(fillDef);
@@ -304,6 +314,19 @@ function migrateProgram(p){
     }
   });
   p.activities = p.activities || clone(DEFAULT_PROGRAM.activities);
+  p.version = 3;
+  return migrateToShared(p);
+}
+// v3 → v4: cardio/core move out of the day lists into one pool shared by every day.
+const SHARED_IDS = ["plank","dead_bug","stair_fin_back","stair_fin_chest"];
+function migrateToShared(p){
+  p.shared = p.shared || [];
+  Object.values(p.templates).forEach(t=>{
+    t.exercises = t.exercises.filter(e=>!SHARED_IDS.includes(e.id));
+    t.pool = (t.pool||[]).filter(e=>!SHARED_IDS.includes(e.id));
+  });
+  SHARED_DEFAULTS.forEach(d=>{ if(!p.shared.some(e=>e.id===d.id)) p.shared.push(fillDef(clone(d))); });
+  p.shared.forEach(fillDef);
   p.version = PROGRAM_VERSION;
   return p;
 }
@@ -337,6 +360,7 @@ function boot(){
 function allDefs(){
   const m={};
   Object.values(PROGRAM.templates).forEach(t=>t.exercises.concat(t.pool||[]).forEach(e=>{ m[e.id]=e; }));
+  (PROGRAM.shared||[]).forEach(e=>{ if(!m[e.id]) m[e.id]=e; });
   return m;
 }
 function musclesOf(e){ if(Array.isArray(e.muscles)) return e.muscles; const d=allDefs()[e.id]; return d?d.muscles:(MUSCLE_MAP[e.id]||guessMuscles(e.name)); }
@@ -500,8 +524,9 @@ function acceptDefault(){
   const o=ui.defaultOffer; if(!o) return;
   const t=PROGRAM.templates[o.day];
   const everything={}; t.exercises.concat(t.pool||[]).forEach(e=>everything[e.id]=e);
+  const shared={}; (PROGRAM.shared||[]).forEach(e=>shared[e.id]=e);
   const ids=o.defs.map(d=>d.id);
-  t.exercises=o.defs.map(d=>everything[d.id]||fillDef(clone(d)));
+  t.exercises=o.defs.map(d=>everything[d.id]||shared[d.id]||fillDef(clone(d)));
   t.pool=Object.values(everything).filter(e=>!ids.includes(e.id));
   saveProgram(); ui.defaultOffer=null; ui.msg=`${t.label} default updated.`; render();
 }
@@ -641,7 +666,7 @@ function todayView(){
     const total=DB.sessions.length+(DB.painLog||[]).length, since=total-(DB.entriesAtBackup||0);
     const o=ui.defaultOffer;
     return `${storageBanner()}
-    ${ui.migrated?`<div class="banner sec" style="border-color:var(--accent)">Program updated: unused exercises moved to each day's pool, Bulgarian split squat added to Leg Day, muscle tags and rep ranges added. Review in Program.
+    ${ui.migrated?`<div class="banner sec" style="border-color:var(--accent)">Program updated: unused exercises moved to pools, cardio & core moved to a new "Any day" pool, Bulgarian split squat added to Leg Day, muscle tags and rep ranges added. Review in Program.
       <div style="margin-top:6px"><button class="tiny" data-act="dismissMig">OK</button></div></div>`:""}
     ${ui.msg?`<div class="banner sec" style="border-color:var(--accent);color:var(--accent)">${esc(ui.msg)}</div>`:""}
     ${o?`<div class="banner sec" style="border-color:var(--accent)">You changed today's exercises or their order. Make this the new default for ${esc(PROGRAM.templates[o.day].label)}?
@@ -746,11 +771,12 @@ function exRow(r,i){
 function addSheet(){
   if(!ui.addOpen) return `<button class="full" data-act="toggleAdd" style="margin-top:4px">+ Add exercise</button>`;
   const t=PROGRAM.templates[form.dayType], inSession=form.exercises.map(r=>r.id);
-  const cand=t.exercises.concat(t.pool||[]).filter(e=>!inSession.includes(e.id));
+  const seen={}, cand=t.exercises.concat(t.pool||[], PROGRAM.shared||[]).filter(e=>!inSession.includes(e.id) && !seen[e.id] && (seen[e.id]=1));
+  const where=e=> t.exercises.some(x=>x.id===e.id)?"default" : (t.pool||[]).some(x=>x.id===e.id)?"pool" : "any day";
   const o=ui.oneOff;
   return `<div class="card p3 col sheet" style="margin-top:4px">
     <div class="row between"><b class="small">Add to today</b><button class="ghost" data-act="toggleAdd">✕</button></div>
-    ${cand.length?cand.map(e=>`<button class="row between" style="text-align:left" data-act="addFromPool" data-k="${e.id}"><span>${esc(e.name)}</span><span class="small muted">${(t.pool||[]).some(p=>p.id===e.id)?"pool":"default"}</span></button>`).join(""):`<div class="small muted">Everything from this day is already in today's session.</div>`}
+    ${cand.length?cand.map(e=>`<button class="row between" style="text-align:left" data-act="addFromPool" data-k="${e.id}"><span>${esc(e.name)}</span><span class="small muted">${where(e)}</span></button>`).join(""):`<div class="small muted">Everything from this day is already in today's session.</div>`}
     <div class="small muted" style="margin-top:6px">One-off exercise</div>
     <input placeholder="Name, e.g. Decline sit-ups" value="${esc(o.name)}" data-f="ooName">
     <div class="fieldrow">
@@ -856,7 +882,7 @@ function editorView(){
   const exCard=(k,e,i,where)=>`<div class="card p3" style="background:var(--alt);margin-bottom:6px">
     <div class="row between">
       <span class="small" data-act="openEdit" data-k="${e.id}" style="flex:1;cursor:pointer">${esc(e.name)}</span>
-      ${where==="ex"?`<button class="ghost" data-act="eUp" data-d="${k}" data-i="${i}">↑</button><button class="ghost" data-act="eDn" data-d="${k}" data-i="${i}">↓</button>
+      ${where==="shared"?"":where==="ex"?`<button class="ghost" data-act="eUp" data-d="${k}" data-i="${i}">↑</button><button class="ghost" data-act="eDn" data-d="${k}" data-i="${i}">↓</button>
         <button class="ghost small" data-act="toPool" data-d="${k}" data-i="${i}">→ pool</button>`
       :`<button class="ghost small" data-act="toDefault" data-d="${k}" data-i="${i}">→ default</button>`}
       <button class="ghost" style="color:var(--alert)" data-act="rmDef" data-d="${k}" data-i="${i}" data-w="${where}">✕</button>
@@ -895,6 +921,13 @@ function editorView(){
       ${(t.pool||[]).map((e,i)=>exCard(k,e,i,"pool")).join("")||`<div class="small muted">Empty.</div>`}
       <button class="full" style="margin-top:6px" data-act="addDef" data-d="${k}">+ New exercise (to pool)</button>
     </div>`:""}</div>`).join("")}
+  <div class="card" style="margin-bottom:8px">
+    <div class="exhead" data-act="openDay" data-k="_shared"><b class="small">Any day — cardio & core</b><span class="small muted">${(PROGRAM.shared||[]).length} exercises</span></div>
+    ${ui.openDay==="_shared"?`<div class="exbody" style="padding-top:10px">
+      <div class="small muted" style="margin-bottom:6px">Shown in + Add exercise on every day.</div>
+      ${(PROGRAM.shared||[]).map((e,i)=>exCard("_shared",e,i,"shared")).join("")||`<div class="small muted">Empty.</div>`}
+      <button class="full" style="margin-top:6px" data-act="addDef" data-d="_shared">+ New exercise</button>
+    </div>`:""}</div>
   <div class="card p3 col sec"><b class="small">Standalone activities</b>
     ${PROGRAM.activities.map((a,i)=>`<div class="col" style="gap:4px">
       <div class="row"><input value="${esc(a.name)}" data-f="aName" data-i="${i}"><button class="ghost" style="color:var(--alert)" data-act="rmAct" data-i="${i}">✕</button></div>
@@ -906,7 +939,7 @@ function editorView(){
 }
 
 /* ================= events ================= */
-function listOf(d,w){ const t=PROGRAM.templates[d]; return w==="pool" ? (t.pool=t.pool||[]) : t.exercises; }
+function listOf(d,w){ if(d==="_shared") return (PROGRAM.shared=PROGRAM.shared||[]); const t=PROGRAM.templates[d]; return w==="pool" ? (t.pool=t.pool||[]) : t.exercises; }
 document.addEventListener("click", async e=>{
   const nav=e.target.closest("nav button"); if(nav){ tab=nav.dataset.tab; ui.editor=false; render(); SC().scrollTo({top:0}); return; }
   if(e.target.id==="btnProgram"){ ui.editor=true; render(); return; }
@@ -978,8 +1011,8 @@ document.addEventListener("click", async e=>{
     toPool:()=>{ const t=PROGRAM.templates[d]; (t.pool=t.pool||[]).push(t.exercises.splice(i,1)[0]); render(); },
     toDefault:()=>{ const t=PROGRAM.templates[d]; t.exercises.push(t.pool.splice(i,1)[0]); render(); },
     rmDef:()=>{ listOf(d,w).splice(i,1); render(); },
-    addDef:()=>{ const t=PROGRAM.templates[d]; const n=fillDef({id:slug("new"),name:"New exercise",mode:"load",sets:3,reps:12,value:10,unit:"kg",step:2.5,joints:[]});
-      (t.pool=t.pool||[]).push(n); ui.openEdit=n.id; render(); },
+    addDef:()=>{ const n=fillDef({id:slug("new"),name:"New exercise",mode:d==="_shared"?"simple":"load",sets:3,reps:12,value:d==="_shared"?null:10,unit:d==="_shared"?"min":"kg",step:2.5,joints:[]});
+      listOf(d, d==="_shared"?"shared":"pool").push(n); ui.openEdit=n.id; render(); },
     eMode:()=>{ listOf(d,w)[i].mode=k; render(); },
     eAssist:()=>{ const x=listOf(d,w)[i]; x.lowerIsHarder=!x.lowerIsHarder; render(); },
     eMuscle:()=>{ const x=listOf(d,w)[i]; x.muscles=x.muscles||[]; x.muscles = x.muscles.includes(k)?x.muscles.filter(m=>m!==k):x.muscles.concat(k); render(); },
@@ -1040,18 +1073,10 @@ function viewportDiag(){
   return { standalone:isStandalone(), portrait:window.matchMedia?matchMedia("(orientation: portrait)").matches:null,
     screenH:screen.height, innerH:window.innerHeight, vvH:vv?Math.round(vv.height):null, vvTop:vv?Math.round(vv.offsetTop):null,
     scrollY:Math.round(window.scrollY), safeTop:cs?cs.paddingTop:null, safeBottom:cs?cs.paddingBottom:null,
-    shim:getComputedStyle(document.documentElement).getPropertyValue("--shim").trim()||"0px" };
+    appBottom:Math.round(document.getElementById("app").getBoundingClientRect().bottom) };
 }
 function fixViewport(){
-  if(!isStandalone()) return;
-  const portrait = window.matchMedia && matchMedia("(orientation: portrait)").matches;
-  const full = portrait ? Math.max(screen.height, screen.width) : Math.min(screen.height, screen.width);
-  const gap = Math.round(full - window.innerHeight);
-  const shim = gap>0 && gap<=120 ? gap : 0;
-  document.documentElement.style.setProperty("--shim", shim+"px");
-  document.documentElement.style.setProperty("--appH", (window.innerHeight+shim)+"px");
-  document.documentElement.classList.toggle("shim", shim>0);
-  if(window.scrollY!==0) window.scrollTo(0,0);
+  if(isStandalone() && window.scrollY!==0) window.scrollTo(0,0);
 }
 ["resize","orientationchange","focus","pageshow"].forEach(ev=>window.addEventListener(ev, ()=>setTimeout(fixViewport,60)));
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) setTimeout(fixViewport,60); });
